@@ -1,0 +1,413 @@
+'==================================
+'       An example of data transfer
+'==================================
+
+'      This program will start from the original French data
+'       provided by OECD Economic perspectives and named fra_*, 
+'       the prefix used by OECD to identify French statistics
+
+'      We decide on the directory
+'      This is not generally necessary
+'       except if one works on several projects
+'      or maintains several directories for the same project
+'       It guarantees trial versions do not destroy official ones
+
+cd  "c:\users\jean louis\skydrive\eviews\book_files\fra_cf"
+
+'      It will create the data for our model
+'      with the prefix f_*
+
+'-------------------------------------------------------------------------
+'     This technique can be used with any source
+'      where the original series use the same prefix
+'      the results will be created with any different prefix
+
+'      In the best case, if the set available is the same (or larger) than the OECD set
+'      one has just to replace the OECD names in the following statements
+'-------------------------------------------------------------------------
+
+'       we close the original file fra_1 
+'       containing the sole fra_* data
+'      and some global OECD series named OECD_*
+
+'      we close also the file which will receive the French data
+'      in case it is already open 
+'      having two versions of the same file open in memory is quite dangerous...
+
+close fra_1
+close data_1
+
+'     We open the original file (presently closed)
+'    a nd save it under the name data_1 for the French data
+
+open fra_1
+save data_1
+
+'     Now the file should contain only original data
+'     called fra_*
+
+'     we delete any existing f_* series
+'      just in case, this should not happen...
+
+delete f_*
+
+'     We have to make an assumption on the sharing of indirect taxes 
+'     into VAT and other indirect taxes
+'     as OECD provides only a global variable
+
+'     p_oit = assumption on the share of oit in indirect taxes
+'
+scalar f_p_oit=0.2
+
+'     we create a time trend
+'     with the value of the year for the first quarter
+'     to which we add 0.25 for each following quarter of the year
+
+'      1994      : 1994Q1
+'      1994.25 : 1994Q2
+'      1994.50 : 1994Q3
+'      1994.75 : 1994Q4
+'      1995.00 : 1995Q1 ....
+
+'   This will be quite useful to :
+
+'      create yearly time trends
+'      replace actual dummy variables by expressions using logical conditions
+'      much easier to manage
+
+smpl 1962Q1 1962Q1
+genr f_t=1962
+smpl 1962Q2 2004Q4
+genr f_t=f_t(-1)+0.25
+
+'     Now we start with the supply - demand equilibrium
+
+smpl 1962Q1 2004Q4
+genr f_gdpval=fra_gdp
+genr f_gdp=fra_GDPV
+
+'--------------------------------------------------------------
+'    Supply
+'--------------------------------------------------------------
+
+'   The model separates market GDP
+
+genr f_gdpmval=fra_gdp-fra_cgw
+genr f_pcog=fra_pcg 
+genr f_cg=fra_cgv 
+genr f_gdpm=fra_GDPV-fra_CGw/fra_pcg 
+genr f_pgdpm=f_gdpmval/f_gdpm
+
+'      Trade af current and constant prices, deflators
+
+genr f_m=fra_MGSV
+genr f_x=fra_XGSV
+genr f_pm=fra_PMGS
+genr f_px=fra_PXGS
+genr f_xval=f_px*f_x
+genr f_mval=f_pm*f_m
+
+'      The deflator of final demand (including VAT and OIT)
+
+genr f_pfd=(f_GDPmVAL+f_MVAL-f_XVAL)/(f_GDPm+f_M-f_X)
+genr f_fd=fra_TDDV-fra_CGw/f_pcog
+
+'      Identifying the indirect taxes This separation is important as VAT applies to final demand
+
+genr f_oit= f_p_oit* fra_TIND 
+genr f_vat = (1-f_p_oit)* fra_TIND
+genr f_r_vat =f_vat/(f_fd*f_pfd-f_vat)
+scalar f_r_vat0=@elem(f_r_vat,"1995")
+genr f_r_oit=f_oit/(f_gdpmval-f_vat-f_oit)
+scalar f_r_oit0=@elem(f_r_oit,"1995")            
+genr f_pfdxt=f_pfd*(1+f_r_vat0)/(1+f_r_vat)
+
+'      Value added excluding VAT (but including OIT)
+
+genr f_qval=f_gdpmval-f_vat
+genr f_q = f_gdpm-f_r_vat0*f_fd/(1+f_r_vat0)
+genr f_pq=f_qval/f_q
+
+
+' 
+
+'      Capital, rate of use, capacity
+
+genr f_k=fra_KBV
+genr f_ur=fra_GDPV/fra_GDPVTR
+genr f_cap=f_q/f_ur
+genr f_pk=f_cap/f_k(-1)
+genr f_urd=1
+
+'-------------------------------------------------------------
+'    Demand
+'-------------------------------------------------------------
+
+'      Intermediate consumption 
+'      Not identified in the OECD data base
+
+genr f_tc=1
+genr f_ic=f_tc*f_q
+
+'      Production price
+
+genr f_pp=(f_qval+f_ic*f_pfdxt)/(f_q+f_ic)
+
+'      Elements of demand and their deflators
+'      Household consumption
+
+genr f_coh=fra_CPV
+genr f_pcoh=fra_cp/fra_cpv
+
+'      Investment, depreciation rate
+
+genr f_i=fra_IBV
+genr f_pi=fra_ib/fra_ib
+genr f_rdep = (f_k(-1) + f_i - f_k) / f_k(-1)
+
+'       Housing investment
+
+genr f_hih=fra_IHV
+
+'       Government investment (excluding State firms)
+
+genr f_ig=fra_IGV
+genr f_igv=fra_IG
+genr f_pig=f_igv/f_ig
+
+'       Government consumption (excluding State firms)
+
+genr f_cogv=fra_cg-fra_cgw
+genr f_cog=(fra_cg-fra_cgw)/f_pcog
+
+'       Government demand
+
+genr f_fdgv=f_cogv+f_igv
+genr f_fdg=f_cog+f_ig
+
+'       Change in inventories
+
+genr f_ci=fra_iskv
+
+'      Individual demand deflator ratios
+
+genr f_r_pi=f_pi/f_pfd
+genr f_r_pcoh=f_pcoh/f_pfd
+genr f_r_pig=f_pig/f_pfd
+genr f_r_pcog=f_pcog/f_pfd
+
+'     Wage rate
+
+genr f_wr=fra_WAGE/(fra_ET-fra_ES)
+genr f_r_scf =  fra_WSSS/fra_WAGE -1
+
+'       Checking that the decomposition of final demand is correct
+
+genr f_fdxr=(f_fd-f_coh-f_i-f_hih-f_ic-f_fdg)/f_q
+
+'-----------------------------------------------------------------
+'    employment, unemployment, population
+'-----------------------------------------------------------------
+
+'      Employment
+
+genr f_lt=fra_ET
+genr f_lg=fra_EG
+genr f_lf=fra_ETB 
+
+'     Labour productivity
+
+genr f_pl=f_q / f_lf
+
+'     Wages and wage cost
+
+genr f_w=f_wr*f_lt
+genr f_wf=f_lf*f_wr
+genr f_uwc=f_wr*(1+f_r_scf)/f_pl
+
+
+'      Unemployment
+
+genr f_un=fra_UN
+genr f_unr=fra_UN/(fra_ET+fra_UN)
+
+'       Population
+
+genr f_pop=fra_POPT
+genr f_pop65=fra_POPT
+genr f_popac=f_lt+f_un
+
+'-------------------------------------------------------------------------------
+'    Financial elements
+'-------------------------------------------------------------------------------
+
+'      Exchange rate
+
+genr f_er=1/(fra_EXCHEB/@elem(fra_EXCHEB,"1995"))
+genr f_erx=f_er
+
+'     Nominal interest rates
+
+genr f_irs=fra_IRS
+genr f_irl=fra_IRL
+genr f_ir = fra_irwyp
+genr f_irm=f_ir
+genr f_irsx=fra_irsaf
+genr f_irlx=fra_irlaf
+genr f_irmx=fra_irfor
+genr f_irx=fra_irfor
+
+'     Real interest rates 
+
+genr f_irr=f_ir-100*@pchy(f_pcoh)
+genr f_irl_ec=0
+genr f_irsr=f_irs-100*@pchy(f_pcoh)
+genr f_irst=f_irs-(150*@pchy(f_PCoh)+50*(f_UR-f_urd)/f_urd)
+scalar p_f_irm=0.8
+genr f_irm_er=f_IRM-(p_f_irm*f_IRM(-1)+(1-p_f_irm)*f_IR)
+
+'     relative cost (for substitution between labor and capital)
+
+genr f_relc=f_wr*(1+f_r_scf)/f_pi/(f_ir/100-@pchy(f_pcoh)-4*log(1-f_rdep))
+genr f_spread=3
+'---------------------------------------------------
+'     Households
+'---------------------------------------------------
+
+'      Global elements
+
+genr f_hi =fra_YRH-fra_TRPH
+genr f_ict=fra_tyh
+genr f_r_ict = fra_TYH / f_hi(-1)
+genr f_hdi=f_hi-fra_tyh
+genr f_hrdi=f_hdi/f_pcoh
+genr f_sr=1-f_coh/(f_hrdi)
+
+'     Individual elements
+
+genr f_socb=fra_trrh
+genr f_scw= fra_TRPH  - f_r_scf*f_w
+genr f_r_scw=f_scw/f_w
+genr f_rpro=f_hi-(f_w-f_scw+f_socb)
+genr f_revx=(1-0.5)*f_rpro
+genr f_revq=0.5*f_rpro
+genr f_r_revx=f_revx/f_pfd
+genr f_r_revq=f_revq/f_qval
+genr f_wg=f_wr*f_lg
+genr f_hdir=f_hdi/f_pcoh
+
+'--------------------------------------------------------
+'     external trade
+'--------------------------------------------------------
+
+'       Tariffs
+
+genr f_tar=0  
+genr f_r_tar=f_tar/f_mval 
+genr f_r_tarx=0
+scalar f_r_tarx0=@elem(f_r_tarx,"1995")
+scalar f_r_tar0=@elem(f_r_tar,"1995")
+
+'       Foreign elements
+
+genr f_wd = fra_XMVMKT
+genr f_ppx=OECD_PGDP
+
+'      Competitiveness
+
+genr f_PMT=f_PM*(1+f_r_tar)/(1+f_r_tar0)
+genr f_compm=f_pmt/f_pp
+genr f_COMPX=f_PX*(1+f_r_tarx)/(1+f_r_tarx0)/(f_PPX*f_ER)
+
+'       Ratios and balances
+
+genr f_rcvol=f_x/f_m
+genr f_rcval=f_xval/f_mval
+genr f_ttrad=f_px/f_pm
+genr f_trb=f_xval-f_mval
+genr f_FCAPX=fra_FBGSV
+
+'      Interests paid
+
+smpl 1990Q1 2004Q4
+scalar p_nix=0.5
+genr f_nixl=-f_ir*f_trb/40*p_nix
+genr f_nixx=-f_irx*f_trb/40*(1-p_nix)
+smpl 1990Q2 2004Q4
+genr f_nixl=(f_nixl(-1)*f_irm/f_irm(-1)-f_ir*f_trb/400*p_nix)/(1-f_ir/400)
+genr f_nixx=(f_nixx(-1)*f_irmx/f_irmx(-1)*f_er/f_er(-1)-f_irx*f_trb/400*(1-p_nix))/(1-f_irx/400)
+genr f_nix=f_nixl+f_nixx
+genr f_fcapx=f_trb-f_nix
+smpl 1962Q1 2004Q4
+
+'---------------------------------------------------------
+'     Government budget
+'---------------------------------------------------------
+
+'       Revenue
+
+genr f_scf=f_r_scf*f_wf
+genr f_r_scg=  f_r_scf
+genr f_scg=f_wg*f_r_scf
+genr f_ifp=fra_tyb
+genr f_r_oit=f_oit/(f_qval)
+genr f_revg=f_ict+f_oit+f_vat+f_scf+f_scg+f_tar+f_scw+f_ifp
+genr f_r_revg=0
+genr f_recg=0
+genr f_r_recg=0
+
+'       Expenditures
+
+genr f_socbr = fra_TRRH /f_pcoh/f_pop
+genr f_subs=fra_TSUB
+genr f_r_subs = fra_TSUB / (f_qval)
+
+'       Interst rates and balance
+
+genr f_nig=fra_gnintp
+genr f_fcapg=-FRA_NLG
+genr f_nig_er=(f_NIG-(f_NIG(-1)*f_IRM/f_IRM(-1)-f_IR/400*f_FCAPG))/f_qval
+genr f_expg=f_revg-f_fcapg
+genr f_r_expg=(f_expg-(f_fdgv+f_wg+f_scg+f_nig+f_socb+f_subs))/f_qval
+
+'       Balance in GDP points
+
+genr f_fcapgp=100*f_fcapg/f_gdpval
+
+'---------------------------------------------------------------
+'      Firms account
+'---------------------------------------------------------------
+
+'       Margins
+
+genr f_marg=f_qval*(1+f_r_subs-f_r_oit)-f_wf*(1+f_r_scf)
+genr f_rmarg =f_marg / f_qval
+
+'      Interests paid, profits and balance
+
+genr f_prof=fra_PROF
+smpl 1978Q1 2004Q4
+genr f_fcapf=-fra_NLB
+
+smpl 1978Q1 1978Q1
+genr f_nif=f_ir*f_fcapf/11
+smpl 1978Q2 2004Q4
+genr f_nif=f_nif(-1)*f_irm/f_irm(-1)-f_ir/400*f_fcapf 
+smpl 1962Q1 2004Q4
+genr f_rprob = f_marg/(f_pfd*f_k(-1))
+genr f_prof1=f_marg-f_revq-f_ifp-f_nif
+genr f_prof_er=(f_prof-f_prof1)/f_qval
+genr f_r_IFP=f_ifp/(f_PROF(-1)+f_IFP(-1))
+genr f_rprof=f_prof/(f_pfd*f_k(-1))
+genr f_fcapf_er=(f_fcapf-(f_prof-f_pi*f_i-f_pfd*f_ci))/f_qval
+
+'--------------------------------------------------------------------
+'      Damping factors
+'--------------------------------------------------------------------
+
+genr f_relax_q=1
+genr f_relax_pfd=1
+
+save data_1
+
+
